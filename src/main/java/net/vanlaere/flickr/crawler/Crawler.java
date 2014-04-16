@@ -396,10 +396,10 @@ public class Crawler {
                 if (numberOfResults == 0) {
                     skip = true;
                 }
-                // Early exit if we have all the photos
-                if(numberOfResults < ACCEPT_THRESHOLD && (this.resultsFound + numberOfResults) >= numberOfTotalResults) {
-                    this.min_upload_date = 0;
-                }
+//                // Early exit if we have all the photos
+//                if(numberOfResults < ACCEPT_THRESHOLD && (this.resultsFound + numberOfResults) >= numberOfTotalResults) {
+//                    this.min_upload_date = 0;
+//                }
             }
             // Do this wil the number of results is < 4000 AND min_date > 0
             while ((numberOfResults < ACCEPT_THRESHOLD && this.min_upload_date > 0 && !skip));
