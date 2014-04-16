@@ -1,7 +1,5 @@
 package net.vanlaere.flickr.crawler;
 
-import net.vanlaere.flickr.crawler.datatypes.IntervalResult;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -20,7 +18,7 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
 import java.util.Vector;
-
+import net.vanlaere.flickr.crawler.datatypes.IntervalResult;
 import org.apache.xmlrpc.XmlRpcException;
 import org.apache.xmlrpc.client.XmlRpcClient;
 import org.apache.xmlrpc.client.XmlRpcClientConfigImpl;
@@ -45,6 +43,10 @@ public class Crawler {
         this.api_key = key;
     }
     
+    public static Date unix2date(long timestamp) {
+        return new java.util.Date(timestamp*1000);
+    }
+    
     /**
      * Holds the URL of the Flickr XML_RPC endpoint.
      */
@@ -57,8 +59,6 @@ public class Crawler {
     private static final String LAST_INTERVAL_FILE = "lastInterval.tmp";
 
     private static final int MAX_FILES_PER_DIR = 10000;
-
-    private static final NumberFormat formatter = new DecimalFormat("#0.00");
 
     protected long MIN_INTER_REQUEST_TIME = 2500;
 
@@ -92,11 +92,6 @@ public class Crawler {
      * Holds our XML RPC client.
      */
     private XmlRpcClient [] clients = null;
-
-    /*
-     * Field holding the total number of results for the current crawl
-     */
-    private int numberOfTotalResults;
 
     private int resultsFound = 0;
 
@@ -155,7 +150,7 @@ public class Crawler {
     private long end_date = 0;
     
     public void setEndDate(long end_date) {
-        System.out.println("Crawler will run until it hits " + end_date);
+        System.out.println("Crawler will run until it hits " + end_date + "\t(" + unix2date(end_date) + ")");
         this.end_date = end_date;
     }
 //    private long end_date = 1303492225; // 1 aug 2010
@@ -306,15 +301,11 @@ public class Crawler {
     public void identifyIntervals(String outputFile){
         try {
             PrintWriter out = new PrintWriter(new FileWriter(outputFile, true), true);
-            // Set some initial values
-            this.numberOfTotalResults = getTotalNumberOfResults();
-            System.out.println(numberOfTotalResults);
             long start = System.currentTimeMillis();
-
             while (this.min_upload_date > this.end_date){
                 // Find a good interval limiter to get the last 4000 pictures
                 // and store it as an IntervalResult
-                IntervalResult ir = findTimeInterval(numberOfTotalResults);
+                IntervalResult ir = findTimeInterval();
                 // Add the new interval to the queue
                 queue.add(ir);
                 System.out.println(ir);
@@ -343,7 +334,7 @@ public class Crawler {
      * @return New value for the minumum date, given the provided maximum date
      * to achieve a result set of just under 4000 pictures.
      */
-    private IntervalResult findTimeInterval(int numberOfTotalResults){
+    private IntervalResult findTimeInterval(){
 
         long initial_min_upload_date = min_upload_date;
         long initial_max_upload_date = max_upload_date;
@@ -391,15 +382,12 @@ public class Crawler {
                 }
                 // Get the number of pages
                 numberOfPages = getNumberOfPages(response);
-                System.out.println(numberOfResults + "\t<<\t["+this.min_upload_date+","+this.max_upload_date+"]");
+                System.out.println(numberOfResults + "\t<<\t["+this.min_upload_date+", "+this.max_upload_date+"]\t"
+                        + "["+unix2date(this.min_upload_date)+", "+unix2date(this.max_upload_date)+"]");
                 // skip this time interval as there seems to be something wrong?
                 if (numberOfResults == 0) {
                     skip = true;
                 }
-//                // Early exit if we have all the photos
-//                if(numberOfResults < ACCEPT_THRESHOLD && (this.resultsFound + numberOfResults) >= numberOfTotalResults) {
-//                    this.min_upload_date = 0;
-//                }
             }
             // Do this wil the number of results is < 4000 AND min_date > 0
             while ((numberOfResults < ACCEPT_THRESHOLD && this.min_upload_date > 0 && !skip));
@@ -446,7 +434,8 @@ public class Crawler {
                     }
                     // Get the number of pages
                     numberOfPages = getNumberOfPages(response);
-                    System.out.println(numberOfResults + "\t>>\t["+this.min_upload_date+","+this.max_upload_date+"]");
+                    System.out.println(numberOfResults + "\t>>\t["+this.min_upload_date+", "+this.max_upload_date+"]\t"
+                            + "["+unix2date(this.min_upload_date)+", "+unix2date(this.max_upload_date)+"]");
                 }
             }
 
@@ -479,8 +468,7 @@ public class Crawler {
         if (!skip) {
             // Add the number of results to the total counter
             this.resultsFound += numberOfResults;
-            double percentage = (this.resultsFound / (numberOfTotalResults * 1.)) * 100;
-            System.out.println(" ** Results so far: "+ this.resultsFound +"/" + numberOfTotalResults + " ("+ formatter.format(percentage) +" %) **");
+            System.out.println(" ** Results so far: "+ this.resultsFound + " **");
             // Return a new IntervalResult containing the results
             return new IntervalResult(this.min_upload_date,this.max_upload_date,numberOfPages,numberOfResults);
         }
@@ -750,7 +738,7 @@ public class Crawler {
                             crawler.setMax_upload_date(min_date - 1);
                             crawler.setMin_upload_date(min_date - 2);
                             crawler.setResultsFound(results);
-                            System.out.println("Resuming from " + min_date);
+                            System.out.println("Resuming from " + min_date + "\t("+ unix2date(min_date) +")");
                         }
                     } catch (IOException e) {
                         System.err.println("IOException: " + e);
