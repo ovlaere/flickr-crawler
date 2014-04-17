@@ -538,6 +538,10 @@ public class Crawler {
          }
     }
 
+    /**
+     * Download the data.
+     * @param resultsDir Directory containing the results.
+     */
     public void downloadData(String resultsDir) {
         // Fetch all current directories
         File dir = new File(resultsDir);
@@ -575,12 +579,14 @@ public class Crawler {
             System.out.println("Switching output dir to: " + outputDir);
         }
 
+        // For all intervals we have on queue
         for (IntervalResult ir : queue) {
             // Create the directory if it does not exist
             if (!outputDir.exists())
                 outputDir.mkdirs();
-
+            // Start a new DownloadWorker
             new DownloadWorker(this, this.clients, ir, outputDir.toString()).download();
+            // Write the last interval we processed to file
             try {
                 PrintWriter writer = new PrintWriter(new FileWriter(LAST_INTERVAL_FILE, false));
                 writer.println(ir.toString());
@@ -606,6 +612,7 @@ public class Crawler {
 
     /**
      * Helper method for parsing the the total number of results from a query.
+     * @param result XML response from the server.
      */
     private int getNumberOfResults(String result){
         try {
@@ -620,8 +627,9 @@ public class Crawler {
         }
     }
 
-    /**Result that should be written to file
+    /**
      * Helper method for parsing the the number of pages for the results from a query.
+     * @param result XML response from the server.
      */
     private int getNumberOfPages(String result){
         int startIndex = result.indexOf("pages=\"") + "pages=\"".length();
@@ -631,6 +639,8 @@ public class Crawler {
 
     /**
      * This method configures JAVA for using a proxy server.
+     * @param host Proxy host
+     * @param port Proxy port
      */
     public static void setUpProxy(String host, String port) {
         System.out.println("Setting up proxy... ");
@@ -640,6 +650,11 @@ public class Crawler {
         System.out.println("done.");
     }
 
+    /**
+     * Load the intervals that are already on file.
+     * @param filename The file containing the intervals.
+     * @return 0 if everything was ok, -1 if there was an error
+     */
     public int loadIntervalsFromFile(String filename) {
         this.queue = new ArrayList<IntervalResult>();
         // Try to load the last processed interval from file
@@ -660,37 +675,43 @@ public class Crawler {
                 System.err.println("Error reading last interval from file!");
             }
         }
-
+        // Load the data from the interval file
         BufferedReader file = null;
         int skipped = 0;
         int results = 0;
-        String line = "";
-        boolean matched_last_interval = lastInterval == null ? true : false;
+        String line;
+        // Assume we WILL skip info until we see the last interval
+        boolean stop_skipping = false;
         try {
             file = new BufferedReader(new FileReader(filename));
             line = file.readLine();
             while (line != null) {
+                // Parse the data
                 String [] values = line.split(" ");
                 int min_date = Integer.parseInt(values[1]);
                 int max_date = Integer.parseInt(values[3]);
                 int totalPages = Integer.parseInt(values[10]);
                 int numberOfResults = Integer.parseInt(values[7]);
                 IntervalResult current = new IntervalResult(min_date, max_date, totalPages, numberOfResults);
-                // If we resume and the results are valid
-//                if (!(numberOfResults == 0 && totalPages == 0)) {
-                if (matched_last_interval && !(numberOfResults == 0 && totalPages == 0)) {
+                // As long as we havent seen the last interval, we keep skipping
+                if (stop_skipping && !(numberOfResults == 0 && totalPages == 0)) {
                     this.totalRequestsToBeDownloaded += totalPages;
                     results += numberOfResults;
                     queue.add(current);
-                }else {
+                }
+                // If this is not yet the last interval we crawled, keep skipping
+                else {
                     skipped++;
                 }
+                // If we found the last interval crawled
                 if (current.equals(lastInterval)) {
-                    matched_last_interval = true;
+                    // Stop skipping data
+                    stop_skipping = true;
                     System.out.println("Skipped up to "+ current +", "+ skipped +" intervals.");
                 }
                 line = file.readLine();
             }
+            // Print some info
             System.out.println(results + "\t" + this.totalRequestsToBeDownloaded + "\t" + filename);
         } catch (IOException ex) {
             System.err.println("IOException: "+ ex.getMessage());
@@ -753,23 +774,23 @@ public class Crawler {
                         BufferedReader file = new BufferedReader(new FileReader(intervalfile));
                         String line = file.readLine();
                         String previousLine = line;
+                        // First count the number of results we already have
                         int results = 0;
-                        long max_upload_date_start = -1;
                         while (line != null) {
                             previousLine = line;
                             String [] values = line.split(" ");
-                            if (max_upload_date_start < 0)
-                                max_upload_date_start = Integer.parseInt(values[3]);
                             results += Integer.parseInt(values[7]);
                             line = file.readLine();
                         }
                         file.close();
-                        // Parse the data for resuming from the end of this file
+                        // Using the last line we saw, parse the time interval to start from
                         if (previousLine != null) {
                             String [] values = previousLine.split(" ");
                             int min_date = Integer.parseInt(values[1]);
+                            // Set min and max upload date different to start with
                             crawler.setMax_upload_date(min_date - 1);
                             crawler.setMin_upload_date(min_date - 2);
+                            // Set the results found so far
                             crawler.setResultsFound(results);
                             System.out.println("Resuming from " + min_date + "\t("+ unix2date(min_date) +")");
                         }
