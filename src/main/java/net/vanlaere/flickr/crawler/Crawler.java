@@ -8,16 +8,12 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.text.DecimalFormat;
-import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
-import java.util.Vector;
 import net.vanlaere.flickr.crawler.datatypes.IntervalResult;
 import org.apache.xmlrpc.XmlRpcException;
 import org.apache.xmlrpc.client.XmlRpcClient;
@@ -25,6 +21,10 @@ import org.apache.xmlrpc.client.XmlRpcClientConfigImpl;
 
 /**
  * This class provides a client for the XML_RPC API interface of Flickr.
+ * 
+ * Please note that the comments are still missing, as this code
+ * has been uploaded on request for someone, while I did not have the time
+ * yet to comment it properly.
  *
  * For more information:
  * @see http://www.flickr.com/services/api/response.xmlrpc.html
@@ -35,14 +35,23 @@ import org.apache.xmlrpc.client.XmlRpcClientConfigImpl;
 public class Crawler {
 
     /**
-     * Here comes your Flickr API key.
+     * Holds your Flickr API Key
      */
     protected String api_key = null;
     
+    /**
+     * Set the API key in the crawler.
+     * @param key Actual API key to use. 
+     */
     public void setApiKey(String key) {
         this.api_key = key;
     }
     
+    /**
+     * Converts a given unix timestamp to a readable date.
+     * @param timestamp The timestamp to convert
+     * @return A Date object
+     */
     public static Date unix2date(long timestamp) {
         return new java.util.Date(timestamp*1000);
     }
@@ -52,16 +61,38 @@ public class Crawler {
      */
     protected final String SERVICE_URL = "http://api.flickr.com/services/xmlrpc/";
 
+    /**
+     * Minimum accuracy to request for items you want to retrieve from Flickr.
+     */
     protected final String MIN_ACCURACY = "1";
 
+    /**
+     * Template for storing result files.
+     */
     protected final String DATAFILE_TEMPLATE = "response_@1_page_@2.xml";
 
+    /**
+     * Filename of the a tmp file that keeps track of the last interval that is being crawled.
+     */
     private static final String LAST_INTERVAL_FILE = "lastInterval.tmp";
 
+    /**
+     * Setting that keeps track of the maximum number of files per directory with results.
+     * Exceeding this threshold might result in a hard to handle file structure. (I had
+     * trouble on Linux with values higher than 10K.)
+     */
     private static final int MAX_FILES_PER_DIR = 10000;
 
+    /**
+     * Minimum time between two requests. This is a global setting: the crawler will
+     * not contact the API sooner than this time.
+     */
     protected long MIN_INTER_REQUEST_TIME = 2500;
 
+    /**
+     * Basic time-out used when a request fails. The system will retry the call with
+     * incrementing sleeps, but the basic one starts here.
+     */
     private static final int RETRY_BASIC_SLEEP = 16000;
 
     /*
@@ -70,6 +101,9 @@ public class Crawler {
      */
     private int retry_current_sleep = RETRY_BASIC_SLEEP;
 
+    /**
+     * Number of times to retry when a request fails.
+     */
     private static final int MAX_NUMBER_OF_RETRIES = 3;
 
     /*
@@ -93,8 +127,16 @@ public class Crawler {
      */
     private XmlRpcClient [] clients = null;
 
+    /**
+     * Variable used for tracking the number of results that are found
+     * during the current run.
+     */
     private int resultsFound = 0;
 
+    /**
+     * Set the number of results found in the current run.
+     * @param resultsFound The actual number of results found.
+     */
     public void setResultsFound(int resultsFound) {
         this.resultsFound = resultsFound;
     }
@@ -104,14 +146,12 @@ public class Crawler {
      */
     private long min_upload_date = (long)((new Date()).getTime()/1000)-1;
 
+    /**
+     * Set the minimum upload date for time based filtering.
+     * @param min_upload_date Unix timestamp for min time
+     */
     public void setMin_upload_date(long min_upload_date) {
         this.min_upload_date = min_upload_date;
-    }
-
-    private long max_upload_date_start = (long)((new Date()).getTime()/1000);
-
-    public void setMax_upload_date_start(long max_upload_date_start) {
-        this.max_upload_date_start = max_upload_date_start;
     }
 
     /**
@@ -119,25 +159,57 @@ public class Crawler {
      */
     private long max_upload_date = (long)((new Date()).getTime()/1000);
 
+    /**
+     * Set the maximum upload date for time based filtering.
+     * @param max_upload_date Unix timestamp for max time
+     */
     public void setMax_upload_date(long max_upload_date) {
         this.max_upload_date = max_upload_date;
     }
 
+    /**
+     * The initial time interval used to jump into the past. The crawler
+     * will start from now and run to the past until it hits your specified
+     * end time. It will try to identify intervals that contain at most 4000
+     * results. Finding these intervals used this value to jump: -1 interval, 
+     * -2 intervals, ... until it exceeds. After that it will run back to the future
+     * in smaller steps to identify an interval.
+     */
     private final long initial_initial_interval = 3600;
 
+    /**
+     * The current interval being used for adaptive detection of intervals.
+     */
     private long initial_interval = initial_initial_interval;
 
+    /**
+     * Threshold for the number of results to accept in an interval. If an interval
+     * is found that exceeds this threshold, it is written to file.
+     */
     private static final int ACCEPT_THRESHOLD = 3000;
 
     /**
      * Holds a queued with results to process in a multithreaded way.
      */
     private List<IntervalResult> queue = new ArrayList<>();
-
+    
+    /**
+     * Keeps track of the total number of pages to be crawled in the download mode.
+     */
     private int totalRequestsToBeDownloaded;
 
+    /**
+     * Keeps track of the number of pages that have been downloaded in the current
+     * download mode.
+     */
     private int requestsDownloadedSoFar = 0;
 
+    /**
+     * Keep track of the number of items downloaded in this crawl, and 
+     * notifies to the screen.
+     * @param notify If True, then "->" will be added to indicate the the request 
+     * was skipped due to an error.
+     */
     public synchronized void requestDownloaded(boolean notify) {
         this.requestsDownloadedSoFar++;
         if (notify)
@@ -149,11 +221,14 @@ public class Crawler {
     // Keep track of the end date for this crawler
     private long end_date = 0;
     
+    /**
+     * Set the end date for this crawl.
+     * @param end_date Unix timestamp
+     */
     public void setEndDate(long end_date) {
         System.out.println("Crawler will run until it hits " + end_date + "\t(" + unix2date(end_date) + ")");
         this.end_date = end_date;
     }
-//    private long end_date = 1303492225; // 1 aug 2010
 
     /**
      * This constructor will create a XML RPC client and
@@ -166,6 +241,7 @@ public class Crawler {
             URL service_endpoint = new URL(SERVICE_URL);
             // Set the service endpoint in the config
             config.setServerURL(service_endpoint);
+            // Create 16 clients for parallel processing
             this.clients = new XmlRpcClient[16]; // 16 pages max
             for (int i = 0; i < clients.length; i++) {
                 // Create an instance of the XML RPC client
@@ -182,70 +258,61 @@ public class Crawler {
     /**
      * This method makes a call to the API given the predefined parameters.
      *
+     * @param queryAllDetails If true, the API will be queried for detailed info.
      * @return Returns a String containing the response from the server.
      */
     public String call_service(boolean queryAllDetails) {
-        // Create a Vector that will contain the parameters
-        Vector<Hashtable<String,Object>> params = new Vector<Hashtable<String,Object>>();
-
-        // Create a Hashtable that keeps the parameters and their values
-        Hashtable<String,Object> struct = getParameterStructVideoCrawl(this.min_upload_date, this.max_upload_date, queryAllDetails, 1);
-
-        // Add the parameters according to the struct that was defined before
-        params.addElement(struct);
+        // Create a Map that keeps the parameters and their values
+        Map<String,Object> parameterMap = getParameters(this.min_upload_date, this.max_upload_date, queryAllDetails, 1);
         // Send the request andResult that should be written to file receive the response
-        return make_call(this.clients[0], struct);
+        return make_call(this.clients[0], parameterMap);
     }
 
-    protected Hashtable<String,Object> getParameterStructVideoCrawl(long min_date, long max_date, boolean queryAllDetails, int pageNumber) {
-        Hashtable<String,Object> struct = new Hashtable<String,Object>();
+    protected Map<String,Object> getParameters(long min_date, long max_date, boolean queryAllDetails, int pageNumber) {
+        Map<String,Object> parameterMap = new HashMap<String,Object>();
         // Set the API key
-        struct.put("api_key", api_key);
+        parameterMap.put("api_key", api_key);
         // Limit the results to images with at least region level accuracy on the location
-        struct.put("accuracy", MIN_ACCURACY);
+        parameterMap.put("accuracy", MIN_ACCURACY);
         // Limit the results to images with geo information
-        struct.put("has_geo", "1");
-        // Limit the result to the following place id
-        struct.put("media", "photos");
+        parameterMap.put("has_geo", "1");
+        // Limi the results to only photos
+        parameterMap.put("media", "photos");
         // Use minimum and maximum upload date to define a bounding box which will result
         // in less or equal of 4000 results (more will not work due to a Flickr bug)
         // Set the minimum value of the upload date
-        struct.put("min_upload_date","" + min_date);
+        parameterMap.put("min_upload_date","" + min_date);
         // Set the maximum value of the upload date
-        struct.put("max_upload_date","" + max_date);
-//        System.out.println("["+min_upload_date+","+max_upload_date+"]");
+        parameterMap.put("max_upload_date","" + max_date);
+        // If all detailed are required, query for these extra values
         if (queryAllDetails)
-            struct.put("extras","description,license,date_upload,date_taken," +
+            parameterMap.put("extras","description,license,date_upload,date_taken," +
                     "owner_name,last_update,geo,tags,machine_tags,views," +
                     "media,path_alias,url_o");
         // Possible values
 //        description, license, date_upload, date_taken, owner_name, icon_server, original_format, last_update, geo,
 //        tags, machine_tags, o_dims, views, media, path_alias, url_sq, url_t, url_s, url_m, url_z, url_l, url_o
-
-        // Number of results per page (default is 250)
-        struct.put("per_page","250");
+        // Number of results per page (default is 250, cannot go higher in API calls)
+        parameterMap.put("per_page","250");
         // Select the page in the results we would like to retrieve.
-        struct.put("page", pageNumber);
-        return struct;
+        parameterMap.put("page", pageNumber);
+        return parameterMap;
     }
-
-    private static long lastCall = (new Date()).getTime();
 
     /**
      * This method makes a call to the API given the predefined parameters.
      *
-     * @return Returns a String containing the response from the server.
+     * @param client XML-RPC client for making requests
+     * @param parameters Map containing the parameters for this request
+     * @return Returns an XML String containing the response from the server.
      */
-    public String make_call(XmlRpcClient client, Hashtable<String,Object> struct) {
-        long now = (new Date()).getTime();
-//        System.out.println((now-lastCall) + " call");
-        lastCall = now;
-        // Create a Vector that will contain the parameters
-        Vector<Hashtable<String,Object>> params = new Vector<Hashtable<String,Object>>();
+    public String make_call(XmlRpcClient client, Map<String,Object> parameters) {
+        // Create a List that will contain the parameters in a map
+        List<Map<String,Object>> params = new ArrayList<Map<String, Object>>();
         // Add the parameters according to the struct that was defined before
-        params.addElement(struct);
+        params.add(parameters);
         // Send the request andResult that should be written to file receive the response
-        String result = "";
+        String result;
         try{
             result = (String) client.execute(methodName, params);
             try {
@@ -262,17 +329,6 @@ public class Crawler {
         if (result == null || result.length() < 100 || getNumberOfResults(result) < 0) {
             remote_calls_failed++;
             System.out.println("XML RPC Error - ignoring result");
-//            try {
-//                System.out.println(result);
-//                System.out.println("Will sleep for "+retry_current_sleep+" and then retry.");
-//                System.out.println("Intermediate stats: Calls: ++ SUCCESS ++ : "+remote_calls_succeeded+" | -- FAILED -- : " + remote_calls_failed + " ( "+formatter.format(remote_calls_failed* 100. / remote_calls_succeeded)+" %)");
-//                Thread.sleep(retry_current_sleep);
-//            } catch (InterruptedException ex) {
-//                System.err.println("Thread was interrrupted. " + ex.getMessage());
-//            }
-//            // Double the retry sleep
-//            retry_current_sleep *= 2;
-//            return make_call(client, struct);
             return null;
         }
         // Call succeeded
@@ -293,10 +349,12 @@ public class Crawler {
     }
 
     /**
-     * This method will perform the actual crawling.
+     * This method will scan for the intervals.
      *
      * As long as we have not reached the timestamp of the start of the crawl,
      * we will crawl Flickr in intervals of just less than 4000 pictures.
+     * 
+     * @param outputFile Filename to which the intervals are written.
      */
     public void identifyIntervals(String outputFile){
         try {
@@ -320,7 +378,7 @@ public class Crawler {
             out.close();
         } catch(IOException e) {
             System.err.println("IOException e:" + e);
-            System.exit(0);
+            System.exit(1);
         }
     }
 
@@ -572,30 +630,6 @@ public class Crawler {
     }
 
     /**
-     * This is a helper function that allows to check the total number
-     * of results available for a specific query.
-     * @return The number of results available on Flickr for the query.
-     */
-    private int getTotalNumberOfResults(){
-        long old_min_upload_date = this.min_upload_date;
-        long old_max_upload_date = this.max_upload_date;
-        this.min_upload_date = 0;
-        this.max_upload_date = this.max_upload_date_start;
-        // Perform an call for all the results
-        String response = call_service(false);
-        this.min_upload_date = old_min_upload_date;
-        this.max_upload_date = old_max_upload_date;
-        // Fetch the number of results
-        int number = getNumberOfResults(response);
-        return number;
-    }
-
-    private void probeNumberOfResultsInRecentPast() {
-
-        System.out.println(getTotalNumberOfResults());
-    }
-
-    /**
      * This method configures JAVA for using a proxy server.
      */
     public static void setUpProxy(String host, String port) {
@@ -734,7 +768,6 @@ public class Crawler {
                         if (previousLine != null) {
                             String [] values = previousLine.split(" ");
                             int min_date = Integer.parseInt(values[1]);
-                            crawler.setMax_upload_date_start(max_upload_date_start);
                             crawler.setMax_upload_date(min_date - 1);
                             crawler.setMin_upload_date(min_date - 2);
                             crawler.setResultsFound(results);
