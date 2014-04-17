@@ -5,8 +5,8 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.Hashtable;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import net.vanlaere.flickr.crawler.datatypes.IntervalResult;
@@ -29,7 +29,7 @@ public class DownloadWorker{
     /**
      * Holds a reference to the super crawler process.
      */
-    private Crawler crawler;
+    private final Crawler crawler;
 
     /**
      * Holds our XML RPC client.
@@ -40,14 +40,25 @@ public class DownloadWorker{
      * Field holding the place we are using. This field is completed
      * during construction.
      */
-    private IntervalResult ir;
-
-    private String resultDir;
+    private final IntervalResult ir;
 
     /**
-     * When calling this constructor, 2 arguments should be provided:
-     * @param min_upload_date The minimum date used in the search
-     * @param max_upload_date The maximum date used in the search
+     * Reference to the directory to write the results to.
+     */
+    private final String resultDir;
+
+    /**
+     * File size that might indicate an error in a previous download for a page.
+     */
+    private final int EMPTY_FILE_INDICATOR = 100;
+    
+    /**
+     * Construct a new DownloadWorker. This will download the actual data for a 
+     * specific interval provided at construction time.
+     * @param crawler Reference to the Crawler instance.
+     * @param clients Reference to the array of XML clients to use in threads
+     * @param ir The actual interval to download (defined by an IntervalResult)
+     * @param resultDir Directory to store the results in
      */
     public DownloadWorker(Crawler crawler, XmlRpcClient[] clients, IntervalResult ir, String resultDir) {
         this.crawler = crawler;
@@ -60,41 +71,61 @@ public class DownloadWorker{
      * Implementation of the run method for threading.
      */
     public void download() {
+        // Display info on screen about this interval
         System.out.println(ir);
         List<Thread> threads = new ArrayList<Thread>();
+        // For each of the pages in the result we are processing
         for (int pageNumber = 1; pageNumber <= this.ir.getTotalPages(); pageNumber++) {
             String pageString = "" + pageNumber;
             if (pageNumber < 10)
                 pageString = "0" + pageNumber;
+            // Prepare filename for this page
             String filename = Tools.applyTemplateValues(crawler.DATAFILE_TEMPLATE,
                     new String[]{""+this.ir.getMaxDate(), ""+pageString});
+            // Check if the file existed on file but was too small
             final File file = new File(resultDir+"/"+filename);
-            final boolean newItem = !file.exists() || file.length() < 100;
+            final boolean newItem = !file.exists() || file.length() < EMPTY_FILE_INDICATOR;
+            // If this is an unseen page to download
             if (newItem) {
-                final Hashtable<String,Object> struct = crawler.getParameterStructVideoCrawl(
+                // Get the parameters
+                final Map<String,Object> parameters = crawler.getParameters(
                         this.ir.getMinDate(), this.ir.getMaxDate(), true, pageNumber);
+                // Get the client
                 final XmlRpcClient c = clients[pageNumber-1];
+                // Start new Thread
                 threads.add(new Thread(new Runnable() {
+                    @Override
                     public void run() {
-                        String response = crawler.make_call(c, struct);
+                        // Call the API
+                        String response = crawler.make_call(c, parameters);
+                        // Check response
                         if (response != null) {
+                            // Save the result to file
                             saveResult(response, file);
+                            // Indicate that this request succeeded
                             crawler.requestDownloaded(newItem);
                         }
+                        // This failed
                         else
+                            // Notify that it failed
                             crawler.requestDownloaded(false);
                     }
                 }));
+                // Start this thread
                 threads.get(threads.size()-1).start();
                 try {
+                    // Wait the inter request time before calling the API again
                     Thread.sleep(crawler.MIN_INTER_REQUEST_TIME);
                 } catch (InterruptedException ex) {
                     System.err.println("Thread was interrrupted. " + ex.getMessage());
                 }
             }
+            // The specific page already existed
             else
-               crawler.requestDownloaded(newItem);
+                // Just notify that it exists
+                crawler.requestDownloaded(newItem);
         }
+        // Wait for all threads to finish
         for (Thread thread : threads) {
             try {
                 thread.join();
@@ -111,19 +142,14 @@ public class DownloadWorker{
      * @param filename Filename of the file containing the results.
      */
     private void saveResult (String result, File file){
-        // Prepare the printwriter
-        PrintWriter out = null;
-        try{
-            out = new PrintWriter(new FileWriter(file));
+        try( 
+            // Prepare the printwriter
+            PrintWriter out = new PrintWriter(new FileWriter(file))) {
             out.println(result);
             out.close();
         }
         catch (IOException e){
             System.err.println("IO Error: " + e.getMessage());
-        }
-        finally{
-            if (out != null)
-                out.close();
         }
     }
 }
