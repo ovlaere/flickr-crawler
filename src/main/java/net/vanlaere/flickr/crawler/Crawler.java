@@ -681,7 +681,7 @@ public class Crawler {
         int results = 0;
         String line;
         // Assume we WILL skip info until we see the last interval
-        boolean stop_skipping = false;
+        boolean stop_skipping = (lastInterval == null ? true : false);
         try {
             file = new BufferedReader(new FileReader(filename));
             line = file.readLine();
