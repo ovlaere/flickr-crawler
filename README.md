@@ -11,9 +11,15 @@ oliviervanlaere@gmail.com
 
 Before getting started, let's sketch the concept of this crawler.
 
-The Flickr API allows to perform requests for data. However, due to a *feature* in the API, you cannot retrieve more than 4000 items in one call. To cope with this, this crawler will try to determine time intervals that approach this limit but don't exceed it. When these intervals are identified, they are written to a file.
+In the past, I wanted to crawl Flickr for the metadata of geotagged pictures, that is, pictures with coordinates assigned to them. The API enables you to fetch this kind of data using the `flickr.photos.search` method.
 
-In a second round, you can start the crawler to download the detailed XML data for all of the intervals you have on file.
+This crawler is particularly written to fetch that kind of data. It will start at the current time, and run back in time to fetch all photos matching these needs, until a given end time is met. Along the road, it will not download the pictures, and it will not download any other type of information but the metadata of the photos and some additional fields that can be retrieved. If you want to modify this crawler to perform other requests, I suggest you look into the `getParameters` and `make_call` methods in the `Crawler` class. I'm confident that you will be able to rewrite them to fit your needs.
+
+Due to a *feature* in the API, you cannot retrieve more than 4000 results for a given API call. One way to cope with this, is to add time constraints to the request. As such, this crawler will try to determine time intervals in which the number of results for the query is less than 4000 but close to it. So, if the crawler starts, it will start at the current time, and go back step by step until the given stop time, identifying intervals and write them to file.
+
+In a second phase, you can start the crawler to download the detailed XML data for all of the intervals you have on file.
+
+And off course, after the second phase, the raw XML data is ready to be parsed.
 
 ### Software requirements
 
